@@ -1,20 +1,75 @@
 # Crear el esquema de Ingredientes en cookbook/ingredients/schema.py
 import graphene
-from graphene import relay, ObjectType
-from graphene_django import DjangoObjectType
-from graphene_django.filter import DjangoFilterConnectionField
+from graphene_django.types import DjangoObjectType, ObjectType
 
 from people.models import Persona
 
-
-# Graphene automáticamente mapeara los campos del modelo Category en un nodo CategoryNode.
-# Esto se configura en la Meta clase 
-class PersonaNode(DjangoObjectType):
+class PersonaType(DjangoObjectType):
     class Meta:
         model = Persona
-        filter_fields = ['nombre', 'apellido', 'edad', 'telefono', 'email']
-        interfaces = (relay.Node, )
 
-class Query(graphene.ObjectType):
-    persona = relay.Node.Field(PersonaNode)
-    all_personas = DjangoFilterConnectionField(PersonaNode)
+class Query(ObjectType):
+    persona = graphene.Field(PersonaType, id=graphene.Int())
+    personas = graphene.List(PersonaType)
+
+    def resolve_persona(self, info, **kwargs):
+        id = kwargs.get('id')
+
+        if id is not None:
+            return Persona.objects.get(pk=id)
+
+        return None
+    
+    def resolve_personas(self, info, **kwargs):
+        return Persona.objects.all()
+
+class PersonaInput(graphene.InputObjectType):
+    id = graphene.ID()
+    nombre = graphene.String()
+    apellido = graphene.String()
+    edad = graphene.String()
+    telefono = graphene.String()
+    email = graphene.String()
+
+class CreatePersona(graphene.Mutation):
+    class Arguments:
+        input = PersonaInput(required=True)
+
+    ok = graphene.Boolean()
+    persona = graphene.Field(PersonaType)
+
+    @staticmethod
+    def mutate(root, info, input=None):
+        ok = True
+        persona_instance = Persona(nombre=input.nombre, apellido=input.apellido, edad=input.edad, telefono=input.telefono, email=input.email)
+        persona_instance.save()
+        return CreatePersona (ok=ok, persona=persona_instance)
+    
+class UpdatePersona(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+        input = PersonaInput(required=True)
+
+    ok = graphene.Boolean()
+    persona = graphene.Field(PersonaType)
+
+    @staticmethod
+    def mutate(root, info, id, input=None):
+        ok = False
+        persona_instance = Persona.objects.get(pk=id)
+        if persona_instance:
+            ok = True
+            persona_instance.nombre = input.nombre
+            persona_instance.apellido = input.apellido
+            persona_instance.edad = input.edad
+            persona_instance.telefono = input.telefono
+            persona_instance.email = input.email
+            persona_instance.save()
+            return UpdatePersona(ok=ok, persona=persona_instance)
+        return UpdatePersona(ok=ok, persona=None)
+
+class Mutation(graphene.ObjectType):
+    create_persona = CreatePersona.Field()
+    update_persona = UpdatePersona.Field()
+
+schema = graphene.Schema(query = Query, mutation = Mutation)
